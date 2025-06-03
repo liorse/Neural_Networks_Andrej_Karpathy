@@ -3,45 +3,10 @@ import math
 import numpy as np
 import matplotlib.pyplot as plt
 %matplotlib inline
-
-#%%
-
-def f(x):
-    return 3*x**2 - 4*x + 5
-
-f(3.0)
-
-#%%
-xs = np.arange(-5,  5, 0.25)
-ys = f(xs)
-ys
-
-#%%
-plt.plot(xs, ys)
-
-#%%
-# calculate the derivative of f at x = 3.0
-h = 1e-9
-x = 3.0
-(f(x+h) - f(x)) / h
-
-#%%
-# now will write a simple function
-h = 0.001
-
-a = 2.0
-b = -3.0
-c = 10
-d1 = a*b + c
-c += h
-d2 = a*b + c
-print("d1 = ", d1)
-print("d2 = ", d2)
-print("slope = ", (d2 - d1) / h)
+from graphviz import Digraph
 
 #%%
 # helper functions to draw the graph
-from graphviz import Digraph
 
 def trace(root):
     nodes, edges = set(), set()
@@ -77,24 +42,65 @@ class Value:
         self._op = _op
         self.label = label
         self.grad = 0.0 # we assume that initial value of the gradient is zero
-    
+        self._backward = lambda: None  # this will be defined later in the backward pass
+
     def __repr__(self):
          return f"Value(data={self.data})"
     
     def __add__(self, other):
-        return Value(self.data + other.data, (self, other), "+")
+        out = Value(self.data + other.data, (self, other), "+")
+        def _backward():
+            self.grad += 1.0 * out.grad
+            other.grad += 1.0 * out.grad
+        out._backward = _backward
+        return out
 
     def __mul__(self, other):
-        return Value(self.data * other.data, (self, other), "*")
+        out = Value(self.data * other.data, (self, other), "*")
+        def _backward():
+            self.grad += other.data * out.grad
+            other.grad += self.data * out.grad
+        out._backward = _backward
+        return out
     
+    def tanh(self):
+        out = Value(math.tanh(self.data), (self,), "tanh")
+        def _backward():
+            self.grad += (1 - math.tanh(self.data) ** 2) * out.grad
+        out._backward = _backward
+        return out
+    
+    def backward(self):
+        # we will implement the backward pass later
+        topo = []
+        visited = set()
+        def build_topo(v):
+            if v not in visited:
+                visited.add(v)
+                for child in v._prev:
+                    build_topo(child)
+                topo.append(v)
+        build_topo(self)
 
-a = Value(2.0, label = "a")
-b = Value(-3.0, label = "b")
-c = Value(10.0, label = "c")
-e = b * a; e.label = "e"
-d = e + c; d.label = "d"
-f = Value(-2.0, label = "f")
-L = d * f; L.label = "L"
-draw_dot(L)
+        self.grad = 1.0  # we set the gradient of the output to 1.0
+        for v in reversed(topo):
+            v._backward()
+
+
+# %% simulating a neuron
+x1 = Value(2.0, label ='x1')
+x2 = Value(0.0, label ='x2')
+# weights
+w1 = Value(-3.0, label ='w1')
+w2 = Value(1.0, label ='w2')
+b = Value(6.8813735870195432, label ='b')
+x1w1 = x1 * w1; x1w1.label = "x1w1"
+x2w2 = x2 * w2; x2w2.label = "x2w2"
+x1w1x2w2 = x1w1 + x2w2; x1w1x2w2.label = "x1w1 + x2w2"
+n = x1w1x2w2 + b; n.label = "n"
+o = n.tanh(); o.label = "o"
+# %%
+o.backward()
+draw_dot(o)
 
 # %%
